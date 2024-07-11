@@ -60,7 +60,7 @@ async function main() {
         const result = await vectorDbClient
             .namespace('france')
             .query({
-                topK: 3,
+                topK: 2,
                 vector: embeddingMessage
             });
 
@@ -71,22 +71,26 @@ async function main() {
         const conversation: Message[] = [
             {
                 role: "user",
-                content: [{ text: userMessage }],
+                content: [{ text: '다음의 어린왕자 소설 원문을 보고 제 답변에 보다 풍성한 문학적 해설을 제공해주세요.' }],
             },
             {
                 role: "assistant",
                 content: [
                     { text: '다음에 제시되는 프랑스어 원문을 보고 사용자의 질문에 보다 풍성한 문학적 해설을 제공해주세요.' },
+                    { text: '<system>사용자의 전제와 배경지식이 소설의 내용과 다르다면, 이를 부드럽게 언급하고 유사하게 생각할 수 있는 내용을 제시하세요.</system>' },
                     { text: '<system>답변은 반드시 한국어로 하십시오. 답변에 프랑스어를 포함하지 마십시오.</system>' },
                 ]
             },
             {
                 role: "user",
-                content: result.matches.map((match) => {
-                    if (match.id === '') return { text: '' }
-                    if (isNaN(Number(match.id))) return { text: '' }
-                    return { text: chunkedText[Number(match.id)] }
-                }),
+                content: [
+                    ...result.matches.map((match) => {
+                        if (match.id === '') return { text: '' }
+                        if (isNaN(Number(match.id))) return { text: '' }
+                        return { text: chunkedText[Number(match.id)] }
+                    }),
+                    { text: userMessage },
+                ]
             },
         ];
 
