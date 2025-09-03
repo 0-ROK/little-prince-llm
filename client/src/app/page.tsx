@@ -139,7 +139,7 @@ export default function Home() {
                     <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
                     <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
                   </div>
-                  <span className="text-indigo-600">어린왕자가 생각하고 있어요...</span>
+                  <span className="text-indigo-600">어린왕자가 답변을 생성하고 있어요...</span>
                 </div>
               </div>
             </div>
