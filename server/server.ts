@@ -1,17 +1,12 @@
 import express from 'express';
 import bodyParser from 'body-parser';
 import cors from 'cors';
-import {
-    BedrockRuntimeClient,
-    ConverseCommand,
-    Message,
-} from '@aws-sdk/client-bedrock-runtime';
 import dotenv from 'dotenv'
 import fs from 'fs'
 import pdf from 'pdf-parse'
 import { Pinecone } from '@pinecone-database/pinecone';
 import chunkText from './utils/chunkText';
-import OpenAi from 'openai'
+import OpenAI from 'openai'
 
 dotenv.config();
 
@@ -26,23 +21,16 @@ app.use(cors({
 
 app.use(bodyParser.json());
 
-if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) {
-    throw new Error("AWS credentials not found");
+if (!process.env.OPENAI_API_KEY) {
+    throw new Error("OpenAI API key not found");
 }
-const inferenceModelId = "anthropic.claude-3-sonnet-20240229-v1:0";
-const llmClient = new BedrockRuntimeClient({
-    region: process.env.AWS_REGION,
-    credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-    },
-});
 
-
-const embeddingModelId = 'text-embedding-ada-002';
-const embeddingClient = new OpenAi({
+const openaiClient = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
 });
+
+const embeddingModelId = 'text-embedding-ada-002';
+const chatModelId = 'gpt-4o-mini'; // 경제적이면서도 성능 좋은 모델
 
 if (!process.env.PINECONE_API_KEY) {
     throw new Error("Pinecone API key not found");
@@ -75,50 +63,63 @@ async function main() {
         console.log(result)
 
 
-        const conversation: Message[] = [
+        // 관련 원문 텍스트 추출
+        const relevantTexts = result.matches
+            .map((match) => {
+                if (match.id === '' || isNaN(Number(match.id))) return '';
+                return chunkedText[Number(match.id)];
+            })
+            .filter(text => text.length > 0);
+
+        // OpenAI Chat API 형식의 메시지 구성
+        const messages = [
             {
-                role: "user",
-                content: [{ text: '다음의 어린왕자 소설 원문을 보고 제 답변에 보다 풍성한 문학적 해설을 제공해주세요.' }],
+                role: "system" as const,
+                content:
+                    `당신은 생텍쥐페리의 "어린왕자" 전문가입니다. 다음 프랑스어 원문을 참고하여 사용자의 질문에 풍부한 문학적 해설을 제공해주세요.
+
+                    참조 원문:
+                    ${relevantTexts.join('\n\n')}
+
+                    지침:
+                    - 답변은 반드시 한국어로 작성하세요
+                    - 프랑스어는 포함하지 마세요
+                    - 사용자의 배경지식이 소설 내용과 다르다면 부드럽게 수정해주세요
+                    - 문학적 깊이와 철학적 의미를 강조해주세요`
             },
             {
-                role: "assistant",
-                content: [
-                    { text: '다음에 제시되는 프랑스어 원문을 보고 사용자의 질문에 보다 풍성한 문학적 해설을 제공해주세요.' },
-                    { text: '<system>사용자의 전제와 배경지식이 소설의 내용과 다르다면, 이를 부드럽게 언급하고 유사하게 생각할 수 있는 내용을 제시하세요.</system>' },
-                    { text: '<system>답변은 반드시 한국어로 하십시오. 답변에 프랑스어를 포함하지 마십시오.</system>' },
-                ]
-            },
-            {
-                role: "user",
-                content: [
-                    ...result.matches.map((match) => {
-                        if (match.id === '') return { text: '' }
-                        if (isNaN(Number(match.id))) return { text: '' }
-                        return { text: chunkedText[Number(match.id)] }
-                    }),
-                    { text: userMessage },
-                ]
-            },
+                role: "user" as const,
+                content: userMessage
+            }
         ];
 
-        const command = new ConverseCommand({
-            modelId: inferenceModelId,
-            messages: conversation,
-            inferenceConfig: { maxTokens: 4096, temperature: 0.5, topP: 0.9 },
-        });
-
         try {
-            const response = await llmClient.send(command);
+            const response = await openaiClient.chat.completions.create({
+                model: chatModelId,
+                messages: messages,
+                max_tokens: 4096,
+                temperature: 0.7,
+                top_p: 0.9,
+            });
+
             res.json({
-                originalText: result.matches.map((match) => {
-                    if (match.id === '') return { text: '' }
-                    if (isNaN(Number(match.id))) return { text: '' }
-                    return { text: chunkedText[Number(match.id)] }
-                }),
-                response: response
+                originalText: relevantTexts.map(text => ({ text })),
+                response: {
+                    output: {
+                        message: {
+                            content: [{
+                                text: response.choices[0]?.message?.content || '응답을 생성할 수 없습니다.'
+                            }]
+                        }
+                    }
+                }
             });
         } catch (error) {
-            res.status(500).json({ error });
+            console.error('OpenAI API Error:', error);
+            res.status(500).json({
+                error: 'OpenAI API 호출 중 오류가 발생했습니다.',
+                details: error instanceof Error ? error.message : 'Unknown error'
+            });
         }
     });
 
@@ -138,7 +139,7 @@ async function main() {
 
 
     async function embeddingText(text: string) {
-        const response = await embeddingClient.embeddings.create({
+        const response = await openaiClient.embeddings.create({
             model: embeddingModelId,
             input: text,
         })
