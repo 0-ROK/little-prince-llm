@@ -1,5 +1,6 @@
 import express from 'express';
 import bodyParser from 'body-parser';
+import cors from 'cors';
 import {
     BedrockRuntimeClient,
     ConverseCommand,
@@ -16,6 +17,12 @@ dotenv.config();
 
 const app = express();
 const port = 8080;
+
+// CORS 설정
+app.use(cors({
+    origin: 'http://localhost:3000',
+    credentials: true
+}));
 
 app.use(bodyParser.json());
 
@@ -51,7 +58,7 @@ async function main() {
     const text = await readPdf();
     const chunkedText = chunkText(text, 350);
 
-    app.get('/generate', async (req: express.Request<{ userMessage: string }>, res: express.Response) => {
+    app.post('/generate', async (req: express.Request<{}, {}, { userMessage: string }>, res: express.Response) => {
 
         const { userMessage } = req.body;
 
