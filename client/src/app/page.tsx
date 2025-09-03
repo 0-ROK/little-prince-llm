@@ -149,7 +149,7 @@ export default function Home() {
       </div>
 
       {/* Input */}
-      <div className="border-t border-indigo-100 bg-white/80 backdrop-blur-sm p-4">
+      <div className="border-t border-indigo-100 bg-white/80 text-black backdrop-blur-sm p-4">
         <div className="max-w-4xl mx-auto">
           <div className="flex space-x-4">
             <textarea
