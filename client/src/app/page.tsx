@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Message, ChatResponse } from '@/types/chat';
 
 export default function Home() {
+  const [mounted, setMounted] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
@@ -15,6 +16,10 @@ export default function Home() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -124,9 +129,11 @@ export default function Home() {
                     </div>
                   </details>
                 )}
-                <div className="text-xs mt-2 opacity-60">
-                  {message.timestamp.toLocaleTimeString()}
-                </div>
+                {mounted && (
+                  <div className="text-xs mt-2 opacity-60">
+                    {message.timestamp.toLocaleTimeString()}
+                  </div>
+                )}
               </div>
             </div>
           ))}
