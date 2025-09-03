@@ -96,6 +96,9 @@ export default function Home() {
             ⭐ 어린왕자와의 대화
             <span className="text-sm font-normal text-indigo-600">Little Prince Literary Assistant</span>
           </h1>
+          <div className="mt-2 text-sm text-amber-600 bg-amber-50 px-3 py-2 rounded-lg border border-amber-200">
+            💡 <strong>안내:</strong> 각 질문은 독립적으로 처리되며, 이전 대화 내용을 기억하지 않습니다.
+          </div>
         </div>
       </header>
 
