@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Message, ChatResponse } from '@/types/chat';
+import { Message, ChatResponse, RagModel } from '@/types/chat';
 
 export default function Home() {
   const [mounted, setMounted] = useState(false);
@@ -15,6 +15,7 @@ export default function Home() {
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [selectedRagModel, setSelectedRagModel] = useState<RagModel>('naive');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -37,6 +38,7 @@ export default function Home() {
       content: input,
       role: 'user',
       timestamp: new Date(),
+      ragModel: selectedRagModel,
     };
 
     setMessages(prev => [...prev, userMessage]);
@@ -44,7 +46,14 @@ export default function Home() {
     setIsLoading(true);
 
     try {
-      const response = await fetch('http://localhost:8080/generate', {
+      // RAG 모델에 따른 엔드포인트 선택
+      const endpoints = {
+        naive: '/generate',
+        advanced: '/generate-advanced',
+        raptor: '/generate-raptor'
+      };
+
+      const response = await fetch(`http://localhost:8080${endpoints[selectedRagModel]}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -63,6 +72,8 @@ export default function Home() {
         role: 'assistant',
         timestamp: new Date(),
         originalText: data.originalText.map(item => item.text),
+        ragModel: selectedRagModel,
+        metadata: data.metadata,
       };
 
       setMessages(prev => [...prev, aiMessage]);
@@ -73,6 +84,7 @@ export default function Home() {
         content: '죄송합니다. 서버와의 연결에 문제가 발생했습니다. 잠시 후 다시 시도해주세요.',
         role: 'assistant',
         timestamp: new Date(),
+        ragModel: selectedRagModel,
       };
       setMessages(prev => [...prev, errorMessage]);
     } finally {
@@ -92,10 +104,29 @@ export default function Home() {
       {/* Header */}
       <header className="border-b border-indigo-100 bg-white/80 backdrop-blur-sm">
         <div className="max-w-4xl mx-auto px-4 py-4">
-          <h1 className="text-2xl font-bold text-indigo-900 flex items-center gap-2">
-            ⭐ 어린왕자와의 대화
-            <span className="text-sm font-normal text-indigo-600">Little Prince Literary Assistant</span>
-          </h1>
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-bold text-indigo-900 flex items-center gap-2">
+                ⭐ 어린왕자와의 대화
+                <span className="text-sm font-normal text-indigo-600">Little Prince Literary Assistant</span>
+              </h1>
+            </div>
+
+            {/* RAG 모델 선택 */}
+            <div className="flex items-center gap-3">
+              <label className="text-sm font-medium text-indigo-700">RAG 모델:</label>
+              <select
+                value={selectedRagModel}
+                onChange={(e) => setSelectedRagModel(e.target.value as RagModel)}
+                className="px-3 py-1.5 text-sm border border-indigo-200 rounded-lg bg-white text-black focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              >
+                <option value="naive">Naive RAG (기본)</option>
+                <option value="advanced">Advanced RAG (고급)</option>
+                <option value="raptor">Raptor RAG (계층적)</option>
+              </select>
+            </div>
+          </div>
+
           <div className="mt-2 text-sm text-amber-600 bg-amber-50 px-3 py-2 rounded-lg border border-amber-200">
             💡 <strong>안내:</strong> 각 질문은 독립적으로 처리되며, 이전 대화 내용을 기억하지 않습니다.
           </div>
@@ -117,6 +148,61 @@ export default function Home() {
                   }`}
               >
                 <div className="whitespace-pre-wrap">{message.content}</div>
+
+                {/* RAG 모델 정보 표시 */}
+                {message.role === 'user' && message.ragModel && (
+                  <div className="mt-2 text-xs bg-indigo-500 px-2 py-1 rounded inline-block">
+                    {message.ragModel === 'naive' && '🔍 Naive RAG'}
+                    {message.ragModel === 'advanced' && '🚀 Advanced RAG'}
+                    {message.ragModel === 'raptor' && '🌳 Raptor RAG'}
+                  </div>
+                )}
+
+                {/* Advanced RAG 메타데이터 표시 */}
+                {message.role === 'assistant' && message.ragModel === 'advanced' && message.metadata && (
+                  <details className="mt-3 text-sm">
+                    <summary className="cursor-pointer text-purple-600 hover:text-purple-800">
+                      🚀 Advanced RAG 처리 정보
+                    </summary>
+                    <div className="mt-2 p-3 bg-purple-50 rounded-lg border-l-4 border-purple-300">
+                      {message.metadata.routingStrategy && (
+                        <div className="mb-2">
+                          <span className="font-semibold text-purple-700">카테고리:</span> {message.metadata.routingStrategy.category}
+                        </div>
+                      )}
+                      {message.metadata.transformedQuery && (
+                        <div className="mb-2">
+                          <span className="font-semibold text-purple-700">변환된 쿼리:</span> {message.metadata.transformedQuery}
+                        </div>
+                      )}
+                      {message.metadata.expandedQueries && message.metadata.expandedQueries.length > 0 && (
+                        <div>
+                          <span className="font-semibold text-purple-700">확장된 쿼리들:</span>
+                          <ul className="list-disc ml-4 mt-1">
+                            {message.metadata.expandedQueries.map((query: string, index: number) => (
+                              <li key={index} className="text-purple-600">{query}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  </details>
+                )}
+
+                {/* Raptor RAG 메타데이터 표시 */}
+                {message.role === 'assistant' && message.ragModel === 'raptor' && message.metadata && (
+                  <details className="mt-3 text-sm">
+                    <summary className="cursor-pointer text-green-600 hover:text-green-800">
+                      🌳 Raptor RAG 처리 정보
+                    </summary>
+                    <div className="mt-2 p-3 bg-green-50 rounded-lg border-l-4 border-green-300">
+                      <div className="text-green-700">
+                        <span className="font-semibold">계층적 검색 레벨:</span> {message.metadata.hierarchicalLevels || 'N/A'}개 컨텍스트
+                      </div>
+                    </div>
+                  </details>
+                )}
+
                 {message.originalText && message.originalText.length > 0 && (
                   <details className="mt-3 text-sm">
                     <summary className="cursor-pointer text-indigo-600 hover:text-indigo-800">
@@ -133,8 +219,15 @@ export default function Home() {
                   </details>
                 )}
                 {mounted && (
-                  <div className="text-xs mt-2 opacity-60">
+                  <div className="text-xs mt-2 opacity-60 flex items-center gap-2">
                     {message.timestamp.toLocaleTimeString()}
+                    {message.role === 'assistant' && message.ragModel && (
+                      <span className="text-xs bg-gray-100 px-2 py-0.5 rounded">
+                        {message.ragModel === 'naive' && 'Naive'}
+                        {message.ragModel === 'advanced' && 'Advanced'}
+                        {message.ragModel === 'raptor' && 'Raptor'}
+                      </span>
+                    )}
                   </div>
                 )}
               </div>
