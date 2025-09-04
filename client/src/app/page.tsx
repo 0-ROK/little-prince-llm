@@ -50,7 +50,10 @@ export default function Home() {
       const endpoints = {
         naive: '/generate',
         advanced: '/generate-advanced',
-        raptor: '/generate-raptor'
+        raptor: '/generate-raptor',
+        rerank: '/generate-rerank',
+        compressed: '/generate-compressed',
+        hybrid: '/generate-hybrid'
       };
 
       const response = await fetch(`http://localhost:8080${endpoints[selectedRagModel]}`, {
@@ -123,6 +126,11 @@ export default function Home() {
                 <option value="naive">Naive RAG (기본)</option>
                 <option value="advanced">Advanced RAG (고급)</option>
                 <option value="raptor">Raptor RAG (계층적)</option>
+                <optgroup label="Post-Retrieval 전략">
+                  <option value="rerank">Rerank RAG (재평가)</option>
+                  <option value="compressed">Compressed RAG (압축)</option>
+                  <option value="hybrid">Hybrid RAG (혼합)</option>
+                </optgroup>
               </select>
             </div>
           </div>
@@ -155,6 +163,9 @@ export default function Home() {
                     {message.ragModel === 'naive' && '🔍 Naive RAG'}
                     {message.ragModel === 'advanced' && '🚀 Advanced RAG'}
                     {message.ragModel === 'raptor' && '🌳 Raptor RAG'}
+                    {message.ragModel === 'rerank' && '⚡ Rerank RAG'}
+                    {message.ragModel === 'compressed' && '🗜️ Compressed RAG'}
+                    {message.ragModel === 'hybrid' && '🔥 Hybrid RAG'}
                   </div>
                 )}
 
@@ -203,6 +214,80 @@ export default function Home() {
                   </details>
                 )}
 
+                {/* Rerank RAG 메타데이터 표시 */}
+                {message.role === 'assistant' && message.ragModel === 'rerank' && message.metadata && (
+                  <details className="mt-3 text-sm">
+                    <summary className="cursor-pointer text-yellow-600 hover:text-yellow-800">
+                      ⚡ Rerank RAG 처리 정보
+                    </summary>
+                    <div className="mt-2 p-3 bg-yellow-50 rounded-lg border-l-4 border-yellow-300">
+                      {message.metadata.rerankedScores && message.metadata.rerankedScores.length > 0 && (
+                        <div className="text-yellow-700">
+                          <span className="font-semibold">재평가된 문서들:</span>
+                          <ul className="list-disc ml-4 mt-1">
+                            {message.metadata.rerankedScores.map((item: any, index: number) => (
+                              <li key={index} className="mb-1">
+                                <span className="text-yellow-600">점수: {item.score}/10</span> - {item.preview}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  </details>
+                )}
+
+                {/* Compressed RAG 메타데이터 표시 */}
+                {message.role === 'assistant' && message.ragModel === 'compressed' && message.metadata && (
+                  <details className="mt-3 text-sm">
+                    <summary className="cursor-pointer text-orange-600 hover:text-orange-800">
+                      🗜️ Compressed RAG 처리 정보
+                    </summary>
+                    <div className="mt-2 p-3 bg-orange-50 rounded-lg border-l-4 border-orange-300">
+                      <div className="text-orange-700 space-y-1">
+                        {message.metadata.originalDocCount && (
+                          <div>
+                            <span className="font-semibold">원본 문서 수:</span> {message.metadata.originalDocCount}개
+                          </div>
+                        )}
+                        {message.metadata.compressionRatio && (
+                          <div>
+                            <span className="font-semibold">압축 비율:</span> {message.metadata.compressionRatio}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </details>
+                )}
+
+                {/* Hybrid RAG 메타데이터 표시 */}
+                {message.role === 'assistant' && message.ragModel === 'hybrid' && message.metadata && (
+                  <details className="mt-3 text-sm">
+                    <summary className="cursor-pointer text-red-600 hover:text-red-800">
+                      🔥 Hybrid RAG 처리 정보
+                    </summary>
+                    <div className="mt-2 p-3 bg-red-50 rounded-lg border-l-4 border-red-300">
+                      <div className="text-red-700 space-y-2">
+                        {message.metadata.originalDocCount && message.metadata.rerankedDocCount && (
+                          <div>
+                            <span className="font-semibold">문서 처리:</span> {message.metadata.originalDocCount}개 → {message.metadata.rerankedDocCount}개 (Rerank)
+                          </div>
+                        )}
+                        {message.metadata.topRerankScores && message.metadata.topRerankScores.length > 0 && (
+                          <div>
+                            <span className="font-semibold">상위 Rerank 점수:</span> {message.metadata.topRerankScores.map((score: number) => `${score}/10`).join(', ')}
+                          </div>
+                        )}
+                        {message.metadata.compressionRatio && (
+                          <div>
+                            <span className="font-semibold">압축 비율:</span> {message.metadata.compressionRatio}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </details>
+                )}
+
                 {message.originalText && message.originalText.length > 0 && (
                   <details className="mt-3 text-sm">
                     <summary className="cursor-pointer text-indigo-600 hover:text-indigo-800">
@@ -226,6 +311,9 @@ export default function Home() {
                         {message.ragModel === 'naive' && 'Naive'}
                         {message.ragModel === 'advanced' && 'Advanced'}
                         {message.ragModel === 'raptor' && 'Raptor'}
+                        {message.ragModel === 'rerank' && 'Rerank'}
+                        {message.ragModel === 'compressed' && 'Compressed'}
+                        {message.ragModel === 'hybrid' && 'Hybrid'}
                       </span>
                     )}
                   </div>

@@ -8,7 +8,7 @@ export interface Message {
     metadata?: any;
 }
 
-export type RagModel = 'naive' | 'advanced' | 'raptor';
+export type RagModel = 'naive' | 'advanced' | 'raptor' | 'rerank' | 'compressed' | 'hybrid';
 
 export interface ChatResponse {
     originalText: Array<{ text: string }>;
@@ -25,5 +25,11 @@ export interface ChatResponse {
         routingStrategy?: any;
         method?: string;
         hierarchicalLevels?: number;
+        // Post-Retrieval 전략 메타데이터
+        rerankedScores?: Array<{ score: number; preview: string }>;
+        originalDocCount?: number;
+        rerankedDocCount?: number;
+        compressionRatio?: string;
+        topRerankScores?: number[];
     };
 }
