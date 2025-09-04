@@ -31,5 +31,10 @@ export interface ChatResponse {
         rerankedDocCount?: number;
         compressionRatio?: string;
         topRerankScores?: number[];
+        // 원본 및 처리된 문서들
+        originalDocuments?: Array<{ text: string; originalScore?: number }>;
+        processedDocuments?: Array<{ text: string }>;
+        compressedDocument?: { text: string };
+        rerankedDocuments?: Array<{ text: string }>;
     };
 }

@@ -220,7 +220,7 @@ export default function Home() {
                     <summary className="cursor-pointer text-yellow-600 hover:text-yellow-800">
                       ⚡ Rerank RAG 처리 정보
                     </summary>
-                    <div className="mt-2 p-3 bg-yellow-50 rounded-lg border-l-4 border-yellow-300">
+                    <div className="mt-2 p-3 bg-yellow-50 rounded-lg border-l-4 border-yellow-300 space-y-3">
                       {message.metadata.rerankedScores && message.metadata.rerankedScores.length > 0 && (
                         <div className="text-yellow-700">
                           <span className="font-semibold">재평가된 문서들:</span>
@@ -233,6 +233,42 @@ export default function Home() {
                           </ul>
                         </div>
                       )}
+
+                      {/* 원본 문서들 표시 */}
+                      {message.metadata.originalDocuments && message.metadata.originalDocuments.length > 0 && (
+                        <details className="border-t border-yellow-200 pt-2">
+                          <summary className="cursor-pointer text-yellow-600 font-medium">
+                            📄 원본 문서들 ({message.metadata.originalDocuments.length}개)
+                          </summary>
+                          <div className="mt-2 space-y-2">
+                            {message.metadata.originalDocuments.map((doc: any, index: number) => (
+                              <div key={index} className="p-2 bg-yellow-100 rounded text-xs text-yellow-800">
+                                <div className="font-medium mb-1">
+                                  원본 {index + 1} (유사도: {doc.originalScore?.toFixed(3) || 'N/A'})
+                                </div>
+                                <div className="italic">{doc.text.substring(0, 200)}...</div>
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      )}
+
+                      {/* 처리된 문서들 표시 */}
+                      {message.metadata.processedDocuments && message.metadata.processedDocuments.length > 0 && (
+                        <details className="border-t border-yellow-200 pt-2">
+                          <summary className="cursor-pointer text-yellow-600 font-medium">
+                            ✨ 재평가 후 선별된 문서들 ({message.metadata.processedDocuments.length}개)
+                          </summary>
+                          <div className="mt-2 space-y-2">
+                            {message.metadata.processedDocuments.map((doc: any, index: number) => (
+                              <div key={index} className="p-2 bg-yellow-200 rounded text-xs text-yellow-800">
+                                <div className="font-medium mb-1">선별 문서 {index + 1}</div>
+                                <div className="italic">{doc.text.substring(0, 200)}...</div>
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      )}
                     </div>
                   </details>
                 )}
@@ -243,7 +279,7 @@ export default function Home() {
                     <summary className="cursor-pointer text-orange-600 hover:text-orange-800">
                       🗜️ Compressed RAG 처리 정보
                     </summary>
-                    <div className="mt-2 p-3 bg-orange-50 rounded-lg border-l-4 border-orange-300">
+                    <div className="mt-2 p-3 bg-orange-50 rounded-lg border-l-4 border-orange-300 space-y-3">
                       <div className="text-orange-700 space-y-1">
                         {message.metadata.originalDocCount && (
                           <div>
@@ -256,6 +292,38 @@ export default function Home() {
                           </div>
                         )}
                       </div>
+
+                      {/* 원본 문서들 표시 */}
+                      {message.metadata.originalDocuments && message.metadata.originalDocuments.length > 0 && (
+                        <details className="border-t border-orange-200 pt-2">
+                          <summary className="cursor-pointer text-orange-600 font-medium">
+                            📄 원본 문서들 ({message.metadata.originalDocuments.length}개)
+                          </summary>
+                          <div className="mt-2 space-y-2">
+                            {message.metadata.originalDocuments.map((doc: any, index: number) => (
+                              <div key={index} className="p-2 bg-orange-100 rounded text-xs text-orange-800">
+                                <div className="font-medium mb-1">원본 {index + 1}</div>
+                                <div className="italic">{doc.text.substring(0, 200)}...</div>
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      )}
+
+                      {/* 압축된 문서 표시 */}
+                      {message.metadata.compressedDocument && (
+                        <details className="border-t border-orange-200 pt-2">
+                          <summary className="cursor-pointer text-orange-600 font-medium">
+                            🗜️ 압축된 문서
+                          </summary>
+                          <div className="mt-2">
+                            <div className="p-2 bg-orange-200 rounded text-xs text-orange-800">
+                              <div className="font-medium mb-1">압축 결과</div>
+                              <div className="italic">{message.metadata.compressedDocument.text.substring(0, 500)}...</div>
+                            </div>
+                          </div>
+                        </details>
+                      )}
                     </div>
                   </details>
                 )}
@@ -266,7 +334,7 @@ export default function Home() {
                     <summary className="cursor-pointer text-red-600 hover:text-red-800">
                       🔥 Hybrid RAG 처리 정보
                     </summary>
-                    <div className="mt-2 p-3 bg-red-50 rounded-lg border-l-4 border-red-300">
+                    <div className="mt-2 p-3 bg-red-50 rounded-lg border-l-4 border-red-300 space-y-3">
                       <div className="text-red-700 space-y-2">
                         {message.metadata.originalDocCount && message.metadata.rerankedDocCount && (
                           <div>
@@ -284,6 +352,57 @@ export default function Home() {
                           </div>
                         )}
                       </div>
+
+                      {/* 원본 문서들 표시 */}
+                      {message.metadata.originalDocuments && message.metadata.originalDocuments.length > 0 && (
+                        <details className="border-t border-red-200 pt-2">
+                          <summary className="cursor-pointer text-red-600 font-medium">
+                            📄 1단계: 원본 문서들 ({message.metadata.originalDocuments.length}개)
+                          </summary>
+                          <div className="mt-2 space-y-2">
+                            {message.metadata.originalDocuments.map((doc: any, index: number) => (
+                              <div key={index} className="p-2 bg-red-100 rounded text-xs text-red-800">
+                                <div className="font-medium mb-1">
+                                  원본 {index + 1} (유사도: {doc.originalScore?.toFixed(3) || 'N/A'})
+                                </div>
+                                <div className="italic">{doc.text.substring(0, 200)}...</div>
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      )}
+
+                      {/* 재평가된 문서들 표시 */}
+                      {message.metadata.rerankedDocuments && message.metadata.rerankedDocuments.length > 0 && (
+                        <details className="border-t border-red-200 pt-2">
+                          <summary className="cursor-pointer text-red-600 font-medium">
+                            ⚡ 2단계: 재평가 후 선별된 문서들 ({message.metadata.rerankedDocuments.length}개)
+                          </summary>
+                          <div className="mt-2 space-y-2">
+                            {message.metadata.rerankedDocuments.map((doc: any, index: number) => (
+                              <div key={index} className="p-2 bg-red-200 rounded text-xs text-red-800">
+                                <div className="font-medium mb-1">재평가 문서 {index + 1}</div>
+                                <div className="italic">{doc.text.substring(0, 200)}...</div>
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      )}
+
+                      {/* 압축된 문서 표시 */}
+                      {message.metadata.compressedDocument && (
+                        <details className="border-t border-red-200 pt-2">
+                          <summary className="cursor-pointer text-red-600 font-medium">
+                            🗜️ 3단계: 최종 압축된 문서
+                          </summary>
+                          <div className="mt-2">
+                            <div className="p-2 bg-red-300 rounded text-xs text-red-800">
+                              <div className="font-medium mb-1">최종 압축 결과</div>
+                              <div className="italic">{message.metadata.compressedDocument.text.substring(0, 500)}...</div>
+                            </div>
+                          </div>
+                        </details>
+                      )}
                     </div>
                   </details>
                 )}
@@ -291,7 +410,7 @@ export default function Home() {
                 {message.originalText && message.originalText.length > 0 && (
                   <details className="mt-3 text-sm">
                     <summary className="cursor-pointer text-indigo-600 hover:text-indigo-800">
-                      📖 참조된 원문 보기
+                      📖 참조 보기
                     </summary>
                     <div className="mt-2 p-3 bg-indigo-50 rounded-lg border-l-4 border-indigo-300">
                       {message.originalText.map((text, index) => (

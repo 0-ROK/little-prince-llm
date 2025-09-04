@@ -266,7 +266,13 @@ async function main() {
                     rerankedScores: rerankedDocs.slice(0, 3).map(doc => ({
                         score: doc.rerankScore,
                         preview: doc.text.substring(0, 100) + '...'
-                    }))
+                    })),
+                    // 원본 문서들도 함께 전송
+                    originalDocuments: retrievedDocs.map(doc => ({
+                        text: doc.text,
+                        originalScore: doc.score
+                    })),
+                    processedDocuments: topRerankedTexts.map(text => ({ text }))
                 }
             });
 
@@ -347,7 +353,10 @@ async function main() {
                 metadata: {
                     method: 'prompt_compression',
                     originalDocCount: retrievedTexts.length,
-                    compressionRatio: `${retrievedTexts.join('').length} → ${compressedContext.length} chars`
+                    compressionRatio: `${retrievedTexts.join('').length} → ${compressedContext.length} chars`,
+                    // 원본 문서들도 함께 전송
+                    originalDocuments: retrievedTexts.map(text => ({ text })),
+                    compressedDocument: { text: compressedContext }
                 }
             });
 
@@ -440,7 +449,14 @@ async function main() {
                     originalDocCount: retrievedDocs.length,
                     rerankedDocCount: topRerankedTexts.length,
                     compressionRatio: `${topRerankedTexts.join('').length} → ${compressedContext.length} chars`,
-                    topRerankScores: rerankedDocs.slice(0, 3).map(doc => doc.rerankScore)
+                    topRerankScores: rerankedDocs.slice(0, 3).map(doc => doc.rerankScore),
+                    // 원본 문서들과 중간 처리 결과들도 함께 전송
+                    originalDocuments: retrievedDocs.map(doc => ({
+                        text: doc.text,
+                        originalScore: doc.score
+                    })),
+                    rerankedDocuments: topRerankedTexts.map(text => ({ text })),
+                    compressedDocument: { text: compressedContext }
                 }
             });
 
