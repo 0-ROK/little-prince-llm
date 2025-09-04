@@ -127,12 +127,10 @@ export default function Home() {
                 <option value="naive">Naive RAG (기본)</option>
                 <option value="advanced">Advanced RAG (고급)</option>
                 <option value="raptor">Raptor RAG (계층적)</option>
-                <optgroup label="Post-Retrieval 전략">
-                  <option value="rerank">Rerank RAG (재평가)</option>
-                  <option value="compressed">Compressed RAG (압축)</option>
-                  <option value="hybrid">Hybrid RAG (혼합)</option>
-                  <option value="rlvr">RLVR RAG (검증&추론)</option>
-                </optgroup>
+                <option value="rerank">Rerank RAG (재평가)</option>
+                <option value="compressed">Compressed RAG (압축)</option>
+                <option value="hybrid">Hybrid RAG (혼합)</option>
+                <option value="rlvr">RLVR RAG (검증&추론)</option>
               </select>
             </div>
           </div>
