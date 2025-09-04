@@ -8,7 +8,7 @@ export interface Message {
     metadata?: any;
 }
 
-export type RagModel = 'naive' | 'advanced' | 'raptor' | 'rerank' | 'compressed' | 'hybrid';
+export type RagModel = 'naive' | 'advanced' | 'raptor' | 'rerank' | 'compressed' | 'hybrid' | 'rlvr';
 
 export interface ChatResponse {
     originalText: Array<{ text: string }>;
@@ -36,5 +36,16 @@ export interface ChatResponse {
         processedDocuments?: Array<{ text: string }>;
         compressedDocument?: { text: string };
         rerankedDocuments?: Array<{ text: string }>;
+        // RLVR 관련 메타데이터
+        verification?: {
+            verifiedDocs: Array<{ text: string; credibility: number; relevance: number }>;
+            verificationSummary: string;
+        };
+        reasoning?: {
+            thinkingSteps: string[];
+            logicalChain: string[];
+            conclusion: string;
+        };
+        cotSteps?: string[];
     };
 }

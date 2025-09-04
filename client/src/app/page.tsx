@@ -53,7 +53,8 @@ export default function Home() {
         raptor: '/generate-raptor',
         rerank: '/generate-rerank',
         compressed: '/generate-compressed',
-        hybrid: '/generate-hybrid'
+        hybrid: '/generate-hybrid',
+        rlvr: '/generate-rlvr'
       };
 
       const response = await fetch(`http://localhost:8080${endpoints[selectedRagModel]}`, {
@@ -130,6 +131,7 @@ export default function Home() {
                   <option value="rerank">Rerank RAG (재평가)</option>
                   <option value="compressed">Compressed RAG (압축)</option>
                   <option value="hybrid">Hybrid RAG (혼합)</option>
+                  <option value="rlvr">RLVR RAG (검증&추론)</option>
                 </optgroup>
               </select>
             </div>
@@ -166,6 +168,7 @@ export default function Home() {
                     {message.ragModel === 'rerank' && '⚡ Rerank RAG'}
                     {message.ragModel === 'compressed' && '🗜️ Compressed RAG'}
                     {message.ragModel === 'hybrid' && '🔥 Hybrid RAG'}
+                    {message.ragModel === 'rlvr' && '🧠 RLVR RAG'}
                   </div>
                 )}
 
@@ -407,6 +410,128 @@ export default function Home() {
                   </details>
                 )}
 
+                {/* RLVR RAG 메타데이터 표시 */}
+                {message.role === 'assistant' && message.ragModel === 'rlvr' && message.metadata && (
+                  <details className="mt-3 text-sm">
+                    <summary className="cursor-pointer text-purple-600 hover:text-purple-800">
+                      🧠 RLVR RAG 처리 정보 (검증 & 추론)
+                    </summary>
+                    <div className="mt-2 p-3 bg-purple-50 rounded-lg border-l-4 border-purple-300 space-y-3">
+
+                      {/* 문서 검증 결과 */}
+                      {message.metadata.verification && (
+                        <details className="border border-purple-200 rounded p-2">
+                          <summary className="cursor-pointer text-purple-600 font-medium">
+                            ✅ 1단계: 문서 검증 (Verification)
+                          </summary>
+                          <div className="mt-2 space-y-2">
+                            <div className="text-purple-700 text-xs">
+                              <strong>검증 요약:</strong> {message.metadata.verification.verificationSummary}
+                            </div>
+                            {message.metadata.verification.verifiedDocs && message.metadata.verification.verifiedDocs.length > 0 && (
+                              <div className="space-y-1">
+                                <div className="font-medium text-purple-600">검증된 문서들:</div>
+                                {message.metadata.verification.verifiedDocs.map((doc: any, index: number) => (
+                                  <div key={index} className="p-2 bg-purple-100 rounded text-xs">
+                                    <div className="font-medium mb-1">
+                                      문서 {index + 1} - 신뢰성: {doc.credibility}/10, 관련성: {doc.relevance}/10
+                                    </div>
+                                    <div className="italic text-purple-800">{doc.text.substring(0, 150)}...</div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </details>
+                      )}
+
+                      {/* 추론 과정 */}
+                      {message.metadata.reasoning && (
+                        <details className="border border-purple-200 rounded p-2">
+                          <summary className="cursor-pointer text-purple-600 font-medium">
+                            🤔 2단계: 단계별 추론 (Chain of Thought)
+                          </summary>
+                          <div className="mt-2 space-y-3">
+
+                            {/* 사고 과정 */}
+                            {message.metadata.reasoning.thinkingSteps && message.metadata.reasoning.thinkingSteps.length > 0 && (
+                              <div>
+                                <div className="font-medium text-purple-600 mb-1">💭 사고 과정:</div>
+                                <div className="space-y-1">
+                                  {message.metadata.reasoning.thinkingSteps.map((step: string, index: number) => (
+                                    <div key={index} className="p-2 bg-purple-100 rounded text-xs">
+                                      <span className="font-medium">단계 {index + 1}:</span> {step}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* 논리적 추론 체인 */}
+                            {message.metadata.reasoning.logicalChain && message.metadata.reasoning.logicalChain.length > 0 && (
+                              <div>
+                                <div className="font-medium text-purple-600 mb-1">🔗 논리적 추론 체인:</div>
+                                <div className="space-y-1">
+                                  {message.metadata.reasoning.logicalChain.map((step: string, index: number) => (
+                                    <div key={index} className="p-2 bg-purple-200 rounded text-xs">
+                                      <span className="font-medium">추론 {index + 1}:</span> {step}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* 결론 */}
+                            {message.metadata.reasoning.conclusion && (
+                              <div>
+                                <div className="font-medium text-purple-600 mb-1">🎯 중간 결론:</div>
+                                <div className="p-2 bg-purple-300 rounded text-xs font-medium">
+                                  {message.metadata.reasoning.conclusion}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </details>
+                      )}
+
+                      {/* Chain of Thought 단계들 */}
+                      {message.metadata.cotSteps && message.metadata.cotSteps.length > 0 && (
+                        <details className="border border-purple-200 rounded p-2">
+                          <summary className="cursor-pointer text-purple-600 font-medium">
+                            🧠 3단계: 최종 CoT 과정
+                          </summary>
+                          <div className="mt-2 space-y-1">
+                            {message.metadata.cotSteps.map((step: string, index: number) => (
+                              <div key={index} className="p-2 bg-gradient-to-r from-purple-100 to-purple-200 rounded text-xs">
+                                <span className="font-medium">CoT {index + 1}:</span> {step}
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      )}
+
+                      {/* 원본 문서들 */}
+                      {message.metadata.originalDocuments && message.metadata.originalDocuments.length > 0 && (
+                        <details className="border-t border-purple-200 pt-2">
+                          <summary className="cursor-pointer text-purple-600 font-medium">
+                            📄 원본 검색 문서들 ({message.metadata.originalDocuments.length}개)
+                          </summary>
+                          <div className="mt-2 space-y-2">
+                            {message.metadata.originalDocuments.map((doc: any, index: number) => (
+                              <div key={index} className="p-2 bg-purple-50 rounded text-xs text-purple-800">
+                                <div className="font-medium mb-1">
+                                  원본 {index + 1} (유사도: {doc.originalScore?.toFixed(3) || 'N/A'})
+                                </div>
+                                <div className="italic">{doc.text.substring(0, 200)}...</div>
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      )}
+                    </div>
+                  </details>
+                )}
+
                 {message.originalText && message.originalText.length > 0 && (
                   <details className="mt-3 text-sm">
                     <summary className="cursor-pointer text-indigo-600 hover:text-indigo-800">
@@ -433,6 +558,7 @@ export default function Home() {
                         {message.ragModel === 'rerank' && 'Rerank'}
                         {message.ragModel === 'compressed' && 'Compressed'}
                         {message.ragModel === 'hybrid' && 'Hybrid'}
+                        {message.ragModel === 'rlvr' && 'RLVR'}
                       </span>
                     )}
                   </div>

@@ -469,6 +469,76 @@ async function main() {
         }
     });
 
+    // RLVR (Retrieval-based Language model for Verification and Reasoning) 엔드포인트
+    app.post('/generate-rlvr', async (req: express.Request<{}, {}, { userMessage: string }>, res: express.Response) => {
+        const { userMessage } = req.body;
+
+        try {
+            // 1. 기본 벡터 검색 수행
+            const embeddingMessage = await embeddingText(userMessage);
+            const result = await vectorDbClient
+                .namespace('france')
+                .query({
+                    topK: 5,
+                    vector: embeddingMessage
+                });
+
+            // 2. 검색 결과를 문서 형태로 변환
+            const retrievedDocs = result.matches
+                .map((match) => {
+                    if (match.id && !isNaN(Number(match.id))) {
+                        return {
+                            text: chunkedText[Number(match.id)],
+                            score: match.score || 0,
+                            id: match.id
+                        };
+                    }
+                    return null;
+                })
+                .filter(doc => doc && doc.text.length > 0) as { text: string; score: number; id: string }[];
+
+            // 3. Verification - 문서 검증 과정
+            const verificationResults = await performDocumentVerification(userMessage, retrievedDocs);
+
+            // 4. Reasoning with CoT - 단계별 추론 과정
+            const reasoningResult = await performCoTReasoning(userMessage, verificationResults.verifiedDocs);
+
+            // 5. 최종 답변 생성
+            const finalAnswer = await generateRLVRResponse(userMessage, reasoningResult);
+
+            res.json({
+                originalText: retrievedDocs.map(doc => ({ text: doc.text })),
+                response: {
+                    output: {
+                        message: {
+                            content: [{
+                                text: finalAnswer.answer
+                            }]
+                        }
+                    }
+                },
+                metadata: {
+                    method: 'rlvr',
+                    verification: verificationResults,
+                    reasoning: reasoningResult,
+                    cotSteps: finalAnswer.cotSteps,
+                    originalDocuments: retrievedDocs.map(doc => ({
+                        text: doc.text,
+                        originalScore: doc.score,
+                        id: doc.id
+                    }))
+                }
+            });
+
+        } catch (error) {
+            console.error('RLVR RAG Error:', error);
+            res.status(500).json({
+                error: 'RLVR RAG 처리 중 오류가 발생했습니다.',
+                details: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    });
+
     // Raptor RAG 엔드포인트
     // app.post('/generate-raptor', async (req: express.Request<{}, {}, { userMessage: string }>, res: express.Response) => {
     //     const { userMessage } = req.body;
@@ -769,6 +839,214 @@ ${doc}`).join('\n\n')}
         } catch (error) {
             console.error('Compression error:', error);
             return docsToCompress.join('\n\n'); // 압축 실패시 원본 반환
+        }
+    }
+
+    // === RLVR (Verification & Reasoning) 함수들 ===
+
+    // 1. Document Verification - 문서 검증 과정
+    async function performDocumentVerification(
+        query: string,
+        documents: { text: string; score: number; id: string }[]
+    ): Promise<{
+        verifiedDocs: { text: string; score: number; id: string; credibility: number; relevance: number }[];
+        verificationSummary: string;
+    }> {
+        const verificationPrompt = `다음은 사용자 질문과 검색된 "어린왕자" 문서들입니다. 각 문서를 검증해주세요.
+
+사용자 질문: "${query}"
+
+검증할 문서들:
+${documents.map((doc, index) => `[문서 ${index + 1}]
+${doc.text}`).join('\n\n')}
+
+각 문서에 대해 다음을 평가해주세요:
+1. 신뢰성(Credibility): 원문의 정확성과 완전성 (1-10점)
+2. 관련성(Relevance): 질문과의 직접적 연관성 (1-10점)
+
+응답 형식:
+문서 1: 신뢰성=8, 관련성=9
+문서 2: 신뢰성=7, 관련성=6
+...
+
+검증 요약: [전체적인 문서 품질과 신뢰성에 대한 간단한 평가]`;
+
+        try {
+            const response = await openaiClient.chat.completions.create({
+                model: chatModelId,
+                messages: [{ role: "user", content: verificationPrompt }],
+                max_tokens: 1000,
+                temperature: 0.1,
+            });
+
+            const verificationText = response.choices[0]?.message?.content || '';
+
+            // 검증 결과 파싱
+            const verifiedDocs = documents.map((doc, index) => {
+                const docPattern = new RegExp(`문서 ${index + 1}[:\\s]*신뢰성\\s*=\\s*(\\d+)[,\\s]*관련성\\s*=\\s*(\\d+)`, 'i');
+                const match = verificationText.match(docPattern);
+
+                return {
+                    ...doc,
+                    credibility: match ? parseInt(match[1]) : 7, // 기본값 7
+                    relevance: match ? parseInt(match[2]) : 7    // 기본값 7
+                };
+            });
+
+            // 검증 요약 추출
+            const summaryMatch = verificationText.match(/검증 요약[:\\s]*(.+)$/im);
+            const verificationSummary = summaryMatch ? summaryMatch[1].trim() : '문서 검증이 완료되었습니다.';
+
+            // 신뢰성과 관련성이 모두 6 이상인 문서만 필터링
+            const filteredDocs = verifiedDocs.filter(doc => doc.credibility >= 6 && doc.relevance >= 6);
+
+            return {
+                verifiedDocs: filteredDocs.length > 0 ? filteredDocs : verifiedDocs.slice(0, 3), // 최소 3개는 보장
+                verificationSummary
+            };
+        } catch (error) {
+            console.error('Verification error:', error);
+            return {
+                verifiedDocs: documents.map(doc => ({ ...doc, credibility: 7, relevance: 7 })),
+                verificationSummary: '검증 과정에서 오류가 발생했지만 기본 검증을 적용했습니다.'
+            };
+        }
+    }
+
+    // 2. Chain of Thought Reasoning - 단계별 추론 과정
+    async function performCoTReasoning(
+        query: string,
+        verifiedDocs: { text: string; credibility: number; relevance: number }[]
+    ): Promise<{
+        thinkingSteps: string[];
+        logicalChain: string[];
+        conclusion: string;
+    }> {
+        const cotPrompt = `당신은 "어린왕자" 전문가입니다. 다음 질문에 대해 단계별로 사고하며 답변해주세요.
+
+질문: "${query}"
+
+검증된 참조 문서들:
+${verifiedDocs.map((doc, index) => `[문서 ${index + 1}] (신뢰성: ${doc.credibility}/10, 관련성: ${doc.relevance}/10)
+${doc.text}`).join('\n\n')}
+
+<thinking>
+단계별 사고 과정을 여기에 작성해주세요:
+1. 질문 분석: [질문의 핵심 요소 파악]
+2. 문서 검토: [각 문서에서 관련 정보 추출]
+3. 논리적 연결: [정보들 간의 관계 분석]
+4. 가설 검증: [가능한 답변들 검토]
+5. 최종 판단: [결론 도출 과정]
+</thinking>
+
+위의 사고 과정을 바탕으로 논리적 추론 체인을 구성해주세요:
+논리 체인:
+1. [첫 번째 논리적 단계]
+2. [두 번째 논리적 단계]
+3. [세 번째 논리적 단계]
+...
+
+결론: [최종 결론]`;
+
+        try {
+            const response = await openaiClient.chat.completions.create({
+                model: chatModelId,
+                messages: [{ role: "user", content: cotPrompt }],
+                max_tokens: 2000,
+                temperature: 0.3,
+            });
+
+            const reasoningText = response.choices[0]?.message?.content || '';
+
+            // <thinking> 태그 내용 추출
+            const thinkingMatch = reasoningText.match(/<thinking>([\s\S]*?)<\/thinking>/i);
+            const thinkingContent = thinkingMatch ? thinkingMatch[1].trim() : '';
+
+            // 사고 과정을 단계별로 분리
+            const thinkingSteps = thinkingContent
+                .split(/\d+\.\s/)
+                .filter(step => step.trim().length > 0)
+                .map(step => step.trim());
+
+            // 논리 체인 추출
+            const logicalChainMatch = reasoningText.match(/논리 체인[:\\s]*([\s\S]*?)(?=결론|$)/i);
+            const logicalChainContent = logicalChainMatch ? logicalChainMatch[1].trim() : '';
+
+            const logicalChain = logicalChainContent
+                .split(/\d+\.\s/)
+                .filter(step => step.trim().length > 0)
+                .map(step => step.trim());
+
+            // 결론 추출
+            const conclusionMatch = reasoningText.match(/결론[:\\s]*(.+)$/im);
+            const conclusion = conclusionMatch ? conclusionMatch[1].trim() : '추론 과정을 통해 결론에 도달했습니다.';
+
+            return {
+                thinkingSteps: thinkingSteps.length > 0 ? thinkingSteps : ['질문을 분석하고 있습니다.'],
+                logicalChain: logicalChain.length > 0 ? logicalChain : ['문서를 바탕으로 논리적 추론을 진행합니다.'],
+                conclusion
+            };
+        } catch (error) {
+            console.error('CoT Reasoning error:', error);
+            return {
+                thinkingSteps: ['질문 분석', '문서 검토', '논리적 추론'],
+                logicalChain: ['검증된 문서를 바탕으로 추론을 진행합니다.'],
+                conclusion: '문서를 바탕으로 결론을 도출했습니다.'
+            };
+        }
+    }
+
+    // 3. RLVR 최종 답변 생성
+    async function generateRLVRResponse(
+        query: string,
+        reasoningResult: {
+            thinkingSteps: string[];
+            logicalChain: string[];
+            conclusion: string;
+        }
+    ): Promise<{
+        answer: string;
+        cotSteps: string[];
+    }> {
+        const finalPrompt = `당신은 "어린왕자" 전문가입니다. 검증과 추론 과정을 거친 결과를 바탕으로 최종 답변을 생성해주세요.
+
+질문: "${query}"
+
+추론 과정:
+${reasoningResult.logicalChain.map((step, index) => `${index + 1}. ${step}`).join('\n')}
+
+결론: ${reasoningResult.conclusion}
+
+위의 추론 과정을 바탕으로 사용자에게 제공할 최종 답변을 작성해주세요:
+- 추론 과정의 핵심 포인트들을 포함
+- 문학적 깊이와 철학적 의미 강조
+- 한국어로 작성
+- 명확하고 설득력 있는 답변`;
+
+        try {
+            const response = await openaiClient.chat.completions.create({
+                model: chatModelId,
+                messages: [{ role: "user", content: finalPrompt }],
+                max_tokens: 1500,
+                temperature: 0.7,
+            });
+
+            const finalAnswer = response.choices[0]?.message?.content || '추론 과정을 통해 답변을 생성했습니다.';
+
+            return {
+                answer: finalAnswer,
+                cotSteps: [
+                    ...reasoningResult.thinkingSteps,
+                    ...reasoningResult.logicalChain,
+                    `결론: ${reasoningResult.conclusion}`
+                ]
+            };
+        } catch (error) {
+            console.error('Final answer generation error:', error);
+            return {
+                answer: '검증과 추론 과정을 통해 답변을 준비했지만, 최종 생성 중 오류가 발생했습니다.',
+                cotSteps: reasoningResult.logicalChain
+            };
         }
     }
 
