@@ -8,7 +8,7 @@ export interface Message {
     metadata?: any;
 }
 
-export type RagModel = 'naive' | 'advanced' | 'raptor' | 'rerank' | 'compressed' | 'hybrid' | 'rlvr';
+export type RagModel = 'naive' | 'advanced' | 'raptor' | 'rerank' | 'compressed' | 'hybrid' | 'rlvr' | 'self-rag';
 
 export interface ChatResponse {
     originalText: Array<{ text: string }>;
@@ -47,5 +47,20 @@ export interface ChatResponse {
             conclusion: string;
         };
         cotSteps?: string[];
+        // Self-RAG 관련 메타데이터
+        needAssessment?: {
+            needsRetrieval: boolean;
+            confidence: number;
+            reasoning: string;
+            queryType: string;
+        };
+        retrievalPerformed?: boolean;
+        selfReflection?: {
+            relevanceScore: number;
+            usefulnessScore: number;
+            completenessScore: number;
+            overallAssessment: string;
+            recommendations: string[];
+        };
     };
 }

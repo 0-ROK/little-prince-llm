@@ -54,7 +54,8 @@ export default function Home() {
         rerank: '/generate-rerank',
         compressed: '/generate-compressed',
         hybrid: '/generate-hybrid',
-        rlvr: '/generate-rlvr'
+        rlvr: '/generate-rlvr',
+        'self-rag': '/generate-self-rag'
       };
 
       const response = await fetch(`http://localhost:8080${endpoints[selectedRagModel]}`, {
@@ -131,6 +132,7 @@ export default function Home() {
                 <option value="compressed">Compressed RAG (압축)</option>
                 <option value="hybrid">Hybrid RAG (혼합)</option>
                 <option value="rlvr">RLVR RAG (검증&추론)</option>
+                <option value="self-rag">Self-RAG (자율판단)</option>
               </select>
             </div>
           </div>
@@ -167,6 +169,7 @@ export default function Home() {
                     {message.ragModel === 'compressed' && '🗜️ Compressed RAG'}
                     {message.ragModel === 'hybrid' && '🔥 Hybrid RAG'}
                     {message.ragModel === 'rlvr' && '🧠 RLVR RAG'}
+                    {message.ragModel === 'self-rag' && '🤖 Self-RAG'}
                   </div>
                 )}
 
@@ -530,6 +533,137 @@ export default function Home() {
                   </details>
                 )}
 
+                {/* Self-RAG 메타데이터 표시 */}
+                {message.role === 'assistant' && message.ragModel === 'self-rag' && message.metadata && (
+                  <details className="mt-3 text-sm">
+                    <summary className="cursor-pointer text-green-600 hover:text-green-800">
+                      🤖 Self-RAG 처리 정보 (자율적 판단)
+                    </summary>
+                    <div className="mt-2 p-3 bg-green-50 rounded-lg border-l-4 border-green-300 space-y-3">
+
+                      {/* RAG 필요성 판단 */}
+                      {message.metadata.needAssessment && (
+                        <details className="border border-green-200 rounded p-2">
+                          <summary className="cursor-pointer text-green-600 font-medium">
+                            🤔 1단계: RAG 필요성 판단
+                          </summary>
+                          <div className="mt-2 space-y-2">
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                              <div className="p-2 bg-green-100 rounded">
+                                <span className="font-medium">판단 결과:</span>
+                                <span className={`ml-1 px-2 py-1 rounded ${message.metadata.needAssessment.needsRetrieval
+                                  ? 'bg-blue-200 text-blue-800'
+                                  : 'bg-gray-200 text-gray-800'
+                                  }`}>
+                                  {message.metadata.needAssessment.needsRetrieval ? 'RAG 필요' : 'RAG 불필요'}
+                                </span>
+                              </div>
+                              <div className="p-2 bg-green-100 rounded">
+                                <span className="font-medium">확신도:</span> {message.metadata.needAssessment.confidence}/10
+                              </div>
+                            </div>
+                            <div className="p-2 bg-green-100 rounded text-xs">
+                              <span className="font-medium">질문 유형:</span>
+                              <span className="ml-1 px-2 py-1 bg-green-200 rounded">
+                                {message.metadata.needAssessment.queryType}
+                              </span>
+                            </div>
+                            <div className="p-2 bg-green-200 rounded text-xs">
+                              <span className="font-medium">판단 근거:</span> {message.metadata.needAssessment.reasoning}
+                            </div>
+                          </div>
+                        </details>
+                      )}
+
+                      {/* 검색 수행 여부 */}
+                      <div className="text-green-700 text-xs p-2 bg-green-100 rounded">
+                        <span className="font-medium">실제 검색 수행:</span>
+                        <span className={`ml-1 px-2 py-1 rounded ${message.metadata.retrievalPerformed
+                          ? 'bg-blue-200 text-blue-800'
+                          : 'bg-gray-200 text-gray-800'
+                          }`}>
+                          {message.metadata.retrievalPerformed ? '검색 수행됨' : '내부 지식 사용'}
+                        </span>
+                      </div>
+
+                      {/* Self-Reflection (검색이 수행된 경우만) */}
+                      {message.metadata.retrievalPerformed && message.metadata.selfReflection && (
+                        <details className="border border-green-200 rounded p-2">
+                          <summary className="cursor-pointer text-green-600 font-medium">
+                            💭 2단계: 검색 결과 자기 반성
+                          </summary>
+                          <div className="mt-2 space-y-2">
+                            <div className="grid grid-cols-3 gap-2 text-xs">
+                              <div className="p-2 bg-green-100 rounded text-center">
+                                <div className="font-medium">관련성</div>
+                                <div className="text-lg font-bold text-green-600">
+                                  {message.metadata.selfReflection.relevanceScore}/10
+                                </div>
+                              </div>
+                              <div className="p-2 bg-green-100 rounded text-center">
+                                <div className="font-medium">유용성</div>
+                                <div className="text-lg font-bold text-green-600">
+                                  {message.metadata.selfReflection.usefulnessScore}/10
+                                </div>
+                              </div>
+                              <div className="p-2 bg-green-100 rounded text-center">
+                                <div className="font-medium">완전성</div>
+                                <div className="text-lg font-bold text-green-600">
+                                  {message.metadata.selfReflection.completenessScore}/10
+                                </div>
+                              </div>
+                            </div>
+                            <div className="p-2 bg-green-200 rounded text-xs">
+                              <span className="font-medium">종합 평가:</span> {message.metadata.selfReflection.overallAssessment}
+                            </div>
+                            {message.metadata.selfReflection.recommendations && message.metadata.selfReflection.recommendations.length > 0 && (
+                              <div className="p-2 bg-green-100 rounded text-xs">
+                                <span className="font-medium">개선 권장사항:</span>
+                                <ul className="list-disc ml-4 mt-1">
+                                  {message.metadata.selfReflection.recommendations.map((rec: string, index: number) => (
+                                    <li key={index}>{rec}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+                        </details>
+                      )}
+
+                      {/* 답변 생성 추론 */}
+                      {message.metadata.reasoning && (
+                        <details className="border border-green-200 rounded p-2">
+                          <summary className="cursor-pointer text-green-600 font-medium">
+                            📝 3단계: 답변 생성 추론
+                          </summary>
+                          <div className="mt-2 p-2 bg-green-200 rounded text-xs">
+                            {message.metadata.reasoning}
+                          </div>
+                        </details>
+                      )}
+
+                      {/* 원본 문서들 (검색이 수행된 경우만) */}
+                      {message.metadata.retrievalPerformed && message.metadata.originalDocuments && message.metadata.originalDocuments.length > 0 && (
+                        <details className="border-t border-green-200 pt-2">
+                          <summary className="cursor-pointer text-green-600 font-medium">
+                            📄 검색된 원본 문서들 ({message.metadata.originalDocuments.length}개)
+                          </summary>
+                          <div className="mt-2 space-y-2">
+                            {message.metadata.originalDocuments.map((doc: any, index: number) => (
+                              <div key={index} className="p-2 bg-green-50 rounded text-xs text-green-800">
+                                <div className="font-medium mb-1">
+                                  문서 {index + 1} (유사도: {doc.originalScore?.toFixed(3) || 'N/A'})
+                                </div>
+                                <div className="italic">{doc.text.substring(0, 200)}...</div>
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      )}
+                    </div>
+                  </details>
+                )}
+
                 {message.originalText && message.originalText.length > 0 && (
                   <details className="mt-3 text-sm">
                     <summary className="cursor-pointer text-indigo-600 hover:text-indigo-800">
@@ -557,6 +691,7 @@ export default function Home() {
                         {message.ragModel === 'compressed' && 'Compressed'}
                         {message.ragModel === 'hybrid' && 'Hybrid'}
                         {message.ragModel === 'rlvr' && 'RLVR'}
+                        {message.ragModel === 'self-rag' && 'Self-RAG'}
                       </span>
                     )}
                   </div>

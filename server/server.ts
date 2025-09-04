@@ -539,6 +539,88 @@ async function main() {
         }
     });
 
+    // Self-RAG 엔드포인트 - 스스로 RAG 필요성을 판단하는 자율적 전략
+    app.post('/generate-self-rag', async (req: express.Request<{}, {}, { userMessage: string }>, res: express.Response) => {
+        const { userMessage } = req.body;
+
+        try {
+            // 1. RAG 필요성 판단
+            const needAssessment = await assessRetrievalNeed(userMessage);
+
+            let retrievalResults: { text: string; score: number; id: string }[] | null = null;
+            let selfReflection: any | null = null;
+            let finalAnswer: { answer: string; reasoning: string } | null = null;
+
+            if (needAssessment.needsRetrieval) {
+                // 2. RAG가 필요한 경우: 검색 수행
+                const embeddingMessage = await embeddingText(userMessage);
+                const result = await vectorDbClient
+                    .namespace('france')
+                    .query({
+                        topK: 4,
+                        vector: embeddingMessage
+                    });
+
+                // 검색 결과 변환
+                const retrievedDocs = result.matches
+                    .map((match) => {
+                        if (match.id && !isNaN(Number(match.id))) {
+                            return {
+                                text: chunkedText[Number(match.id)],
+                                score: match.score || 0,
+                                id: match.id
+                            };
+                        }
+                        return null;
+                    })
+                    .filter(doc => doc && doc.text.length > 0) as { text: string; score: number; id: string }[];
+
+                retrievalResults = retrievedDocs;
+
+                // 3. 검색 결과에 대한 자기 반성 (Self-Reflection)
+                selfReflection = await performSelfReflection(userMessage, retrievedDocs);
+
+                // 4. RAG 기반 답변 생성
+                finalAnswer = await generateSelfRAGResponse(userMessage, retrievedDocs, selfReflection, true);
+            } else {
+                // RAG가 불필요한 경우: 내부 지식만으로 답변
+                finalAnswer = await generateSelfRAGResponse(userMessage, [], null, false);
+            }
+
+            res.json({
+                originalText: retrievalResults ? retrievalResults.map(doc => ({ text: doc.text })) : [],
+                response: {
+                    output: {
+                        message: {
+                            content: [{
+                                text: finalAnswer?.answer || 'Self-RAG 처리 중 오류가 발생했습니다.'
+                            }]
+                        }
+                    }
+                },
+                metadata: {
+                    method: 'self_rag',
+                    needAssessment,
+                    retrievalPerformed: needAssessment.needsRetrieval,
+                    selfReflection,
+                    originalDocuments: retrievalResults ? retrievalResults.map(doc => ({
+                        text: doc.text,
+                        originalScore: doc.score,
+                        id: doc.id
+                    })) : [],
+                    reasoning: finalAnswer?.reasoning || 'Self-RAG 추론 과정에서 오류가 발생했습니다.'
+                }
+            });
+
+        } catch (error) {
+            console.error('Self-RAG Error:', error);
+            res.status(500).json({
+                error: 'Self-RAG 처리 중 오류가 발생했습니다.',
+                details: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    });
+
     // Raptor RAG 엔드포인트
     // app.post('/generate-raptor', async (req: express.Request<{}, {}, { userMessage: string }>, res: express.Response) => {
     //     const { userMessage } = req.body;
@@ -1046,6 +1128,238 @@ ${reasoningResult.logicalChain.map((step, index) => `${index + 1}. ${step}`).joi
             return {
                 answer: '검증과 추론 과정을 통해 답변을 준비했지만, 최종 생성 중 오류가 발생했습니다.',
                 cotSteps: reasoningResult.logicalChain
+            };
+        }
+    }
+
+    // === Self-RAG 함수들 ===
+
+    // 1. RAG 필요성 평가 - 질문이 외부 지식을 필요로 하는지 판단
+    async function assessRetrievalNeed(query: string): Promise<{
+        needsRetrieval: boolean;
+        confidence: number;
+        reasoning: string;
+        queryType: string;
+    }> {
+        const assessmentPrompt = `당신은 "어린왕자" 전문가입니다. 다음 질문을 분석하여 외부 문서 검색(RAG)이 필요한지 판단해주세요.
+
+질문: "${query}"
+
+다음 기준으로 평가해주세요:
+
+1. 내부 지식 충분성: 기본적인 문학 지식만으로 답변 가능한가?
+2. 구체적 인용 필요성: 원문의 구체적인 인용이나 정확한 구절이 필요한가?
+3. 세부 정보 요구: 특정 장면, 대화, 상황에 대한 세부 정보가 필요한가?
+4. 복잡성 수준: 단순한 질문인가, 복합적 분석이 필요한가?
+
+질문 유형 분류:
+- factual: 사실적 정보 질문
+- analytical: 분석적 해석 질문  
+- philosophical: 철학적 의미 질문
+- contextual: 맥락적 이해 질문
+- general: 일반적 질문
+
+응답 형식:
+RAG 필요성: [YES/NO]
+확신도: [1-10]
+질문 유형: [위 중 하나]
+판단 근거: [구체적인 이유 설명]`;
+
+        try {
+            const response = await openaiClient.chat.completions.create({
+                model: chatModelId,
+                messages: [{ role: "user", content: assessmentPrompt }],
+                max_tokens: 500,
+                temperature: 0.1,
+            });
+
+            const assessmentText = response.choices[0]?.message?.content || '';
+
+            // 응답 파싱
+            const needsMatch = assessmentText.match(/RAG 필요성[:\s]*(YES|NO)/i);
+            const confidenceMatch = assessmentText.match(/확신도[:\s]*(\d+)/i);
+            const typeMatch = assessmentText.match(/질문 유형[:\s]*(factual|analytical|philosophical|contextual|general)/i);
+            const reasoningMatch = assessmentText.match(/판단 근거[:\s]*(.+)$/im);
+
+            const needsRetrieval = needsMatch ? needsMatch[1].toUpperCase() === 'YES' : false;
+            const confidence = confidenceMatch ? parseInt(confidenceMatch[1]) : 5;
+            const queryType = typeMatch ? typeMatch[1] : 'general';
+            const reasoning = reasoningMatch ? reasoningMatch[1].trim() : '기본 평가 기준을 적용했습니다.';
+
+            return {
+                needsRetrieval,
+                confidence: Math.min(Math.max(confidence, 1), 10),
+                reasoning,
+                queryType
+            };
+        } catch (error) {
+            console.error('Need assessment error:', error);
+            // 에러 시 안전하게 RAG 수행
+            return {
+                needsRetrieval: true,
+                confidence: 5,
+                reasoning: '평가 중 오류가 발생하여 안전하게 RAG를 수행합니다.',
+                queryType: 'general'
+            };
+        }
+    }
+
+    // 2. Self-Reflection - 검색 결과의 유용성 평가
+    async function performSelfReflection(
+        query: string,
+        documents: { text: string; score: number; id: string }[]
+    ): Promise<{
+        relevanceScore: number;
+        usefulnessScore: number;
+        completenessScore: number;
+        overallAssessment: string;
+        recommendations: string[];
+    }> {
+        const reflectionPrompt = `검색된 문서들이 다음 질문에 얼마나 유용한지 자기 반성적으로 평가해주세요.
+
+질문: "${query}"
+
+검색된 문서들:
+${documents.map((doc, index) => `[문서 ${index + 1}] (유사도: ${doc.score?.toFixed(3)})
+${doc.text}`).join('\n\n')}
+
+다음 기준으로 평가해주세요:
+
+1. 관련성(Relevance): 문서들이 질문과 얼마나 관련이 있는가? (1-10점)
+2. 유용성(Usefulness): 문서들이 답변 생성에 얼마나 도움이 되는가? (1-10점)  
+3. 완전성(Completeness): 문서들이 질문에 대한 충분한 정보를 제공하는가? (1-10점)
+
+응답 형식:
+관련성 점수: [1-10]
+유용성 점수: [1-10]
+완전성 점수: [1-10]
+전체 평가: [검색 결과에 대한 종합적 평가]
+개선 권장사항: [더 나은 검색을 위한 제안들]`;
+
+        try {
+            const response = await openaiClient.chat.completions.create({
+                model: chatModelId,
+                messages: [{ role: "user", content: reflectionPrompt }],
+                max_tokens: 800,
+                temperature: 0.2,
+            });
+
+            const reflectionText = response.choices[0]?.message?.content || '';
+
+            // 점수 파싱
+            const relevanceMatch = reflectionText.match(/관련성 점수[:\s]*(\d+)/i);
+            const usefulnessMatch = reflectionText.match(/유용성 점수[:\s]*(\d+)/i);
+            const completenessMatch = reflectionText.match(/완전성 점수[:\s]*(\d+)/i);
+            const assessmentMatch = reflectionText.match(/전체 평가[:\s]*([\s\S]*?)(?=개선 권장사항|$)/i);
+            const recommendationsMatch = reflectionText.match(/개선 권장사항[:\s]*([\s\S]*)$/i);
+
+            const relevanceScore = relevanceMatch ? parseInt(relevanceMatch[1]) : 7;
+            const usefulnessScore = usefulnessMatch ? parseInt(usefulnessMatch[1]) : 7;
+            const completenessScore = completenessMatch ? parseInt(completenessMatch[1]) : 7;
+            const overallAssessment = assessmentMatch ? assessmentMatch[1].trim() : '검색 결과가 적절히 활용 가능합니다.';
+            const recommendations = recommendationsMatch ?
+                recommendationsMatch[1].trim().split(/[.\n]/).filter(r => r.trim().length > 0) :
+                ['더 구체적인 키워드로 재검색 고려'];
+
+            return {
+                relevanceScore: Math.min(Math.max(relevanceScore, 1), 10),
+                usefulnessScore: Math.min(Math.max(usefulnessScore, 1), 10),
+                completenessScore: Math.min(Math.max(completenessScore, 1), 10),
+                overallAssessment,
+                recommendations: recommendations.slice(0, 3) // 최대 3개 권장사항
+            };
+        } catch (error) {
+            console.error('Self-reflection error:', error);
+            return {
+                relevanceScore: 7,
+                usefulnessScore: 7,
+                completenessScore: 7,
+                overallAssessment: '자기 반성 중 오류가 발생했지만 검색 결과를 활용합니다.',
+                recommendations: ['검색 결과 품질 개선 필요']
+            };
+        }
+    }
+
+    // 3. Self-RAG 답변 생성 - RAG 사용 여부에 따른 적응적 답변
+    async function generateSelfRAGResponse(
+        query: string,
+        documents: { text: string; score: number; id: string }[],
+        reflection: {
+            relevanceScore: number;
+            usefulnessScore: number;
+            completenessScore: number;
+            overallAssessment: string;
+        } | null,
+        usedRAG: boolean
+    ): Promise<{
+        answer: string;
+        reasoning: string;
+    }> {
+        let prompt = '';
+
+        if (usedRAG && documents.length > 0) {
+            // RAG를 사용한 경우
+            prompt = `당신은 "어린왕자" 전문가입니다. 검색된 문서와 자기 반성 결과를 바탕으로 답변해주세요.
+
+질문: "${query}"
+
+검색된 문서들:
+${documents.map((doc, index) => `[문서 ${index + 1}]
+${doc.text}`).join('\n\n')}
+
+자기 반성 결과:
+- 관련성: ${reflection?.relevanceScore}/10
+- 유용성: ${reflection?.usefulnessScore}/10  
+- 완전성: ${reflection?.completenessScore}/10
+- 평가: ${reflection?.overallAssessment}
+
+지침:
+- 검색된 문서를 적극 활용하되, 자기 반성 결과를 고려하여 답변의 신뢰도를 조절하세요
+- 문서의 한계가 있다면 이를 명시하고, 가능한 범위에서 답변하세요
+- 한국어로 답변하고, 문학적 깊이를 살려주세요
+
+답변과 함께 이 답변을 생성한 추론 과정도 간략히 설명해주세요.`;
+        } else {
+            // RAG를 사용하지 않은 경우
+            prompt = `당신은 "어린왕자" 전문가입니다. 다음 질문에 대해 내부 지식만으로 답변해주세요.
+
+질문: "${query}"
+
+Self-RAG 판단 결과: 이 질문은 외부 문서 검색 없이도 충분히 답변 가능합니다.
+
+지침:
+- 어린왕자에 대한 일반적인 문학적 지식과 철학적 해석을 바탕으로 답변하세요
+- 구체적인 원문 인용보다는 작품의 전반적 의미와 교훈에 집중하세요
+- 한국어로 답변하고, 문학적 깊이를 살려주세요
+
+답변과 함께 RAG 없이 답변한 이유와 추론 과정도 간략히 설명해주세요.`;
+        }
+
+        try {
+            const response = await openaiClient.chat.completions.create({
+                model: chatModelId,
+                messages: [{ role: "user", content: prompt }],
+                max_tokens: 1500,
+                temperature: 0.7,
+            });
+
+            const fullResponse = response.choices[0]?.message?.content || '답변을 생성할 수 없습니다.';
+
+            // 답변과 추론 과정을 분리 (만약 명시적으로 구분되어 있다면)
+            const parts = fullResponse.split(/(?:추론 과정|이유|근거)[:\s]/i);
+            const answer = parts[0].trim();
+            const reasoning = parts.length > 1 ? parts[1].trim() :
+                (usedRAG ? 'RAG를 통해 검색된 문서를 바탕으로 답변했습니다.' : '내부 지식만으로 충분히 답변 가능하다고 판단했습니다.');
+
+            return {
+                answer,
+                reasoning
+            };
+        } catch (error) {
+            console.error('Self-RAG response generation error:', error);
+            return {
+                answer: 'Self-RAG 답변 생성 중 오류가 발생했습니다.',
+                reasoning: '답변 생성 과정에서 기술적 문제가 발생했습니다.'
             };
         }
     }
